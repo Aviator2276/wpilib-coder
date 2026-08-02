@@ -92,6 +92,23 @@ execution (verified: 890 MB incl. halsim_gui downloaded in 11 s), and
 `build` and `simulateJavaRelease` both pass fully offline in a fresh container.
 Workspace `sim-test` restarted onto the final image: healthy, DISPLAY set, halsim in cache.
 
+## Stale-extension bug — FIXED (2026-08-02, reported by user)
+
+User's "new WPILib example project" failed with Groovy `InvokerHelper` NoClassDefFoundError.
+Root cause (Opus subagent diagnosis): code-server installs `wpilibsuite.vscode-wpilib` from
+Open VSX, where WPILib's LAST published version is **2021.3.1** — it generates 2021 projects
+(Gradle 6.0.1) that cannot run on JDK 17 (Groovy 2.5 vs JDK-16+ encapsulation). Not metaspace,
+not the RO cache. Current versions ship only as GitHub-release VSIXs.
+Fix: extension removed from the code-server module's list; image bakes
+`vscode-wpilib-2026.2.1.vsix` at /opt/wpilib-sim/; module run.sh installs it once code-server
+is up (replacing any stale version). The user's old `SimpleSim` project is a 2021 project and
+must be recreated with the fixed extension — not migrated.
+Also (separate hardening): gradle.properties now adds `-XX:MaxMetaspaceSize=384m`.
+VNC login is now workspace-owner username + user-set "Simulator Password" parameter
+(min 6 chars, blank = random fallback); verified live admin/frcrocks=200, others 401.
+Git history rewritten: >100 MB blobs (spike build artifacts, .terraform providers) purged,
+co-author trailers removed; user must `git push --force -u origin main`.
+
 ## Remaining user items
 
 1. Registry namespace confirmation (`aviator2277` placeholder; rename dir if different).

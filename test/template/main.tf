@@ -203,7 +203,9 @@ module "code-server" {
     "vscode-icons-team.vscode-icons",
     "esbenp.prettier-vscode",
     "ms-toolsai.jupyter",
-    "wpilibsuite.vscode-wpilib",
+    # wpilibsuite.vscode-wpilib intentionally absent: Open VSX (code-server's
+    # source) stopped at 2021.3.1, which generates Gradle-6 projects that cannot
+    # build on JDK 17. The wpilib-sim module installs the pinned 2026 VSIX.
     "moocfi.test-my-code",
     "ms-python.python",
     "vscjava.vscode-java-pack",

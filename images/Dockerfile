@@ -76,12 +76,21 @@ ENV GRADLE_RO_DEP_CACHE=/opt/wpilib-seed/gradle/caches
 
 # Cap Gradle's JVM globally — 3 GB workspaces cannot afford the 1.5 GB default.
 RUN mkdir -p /etc/skel/.gradle \
-  && printf 'org.gradle.jvmargs=-Xmx768m\norg.gradle.parallel=false\n' \
+  && printf 'org.gradle.jvmargs=-Xmx768m -XX:MaxMetaspaceSize=384m\norg.gradle.parallel=false\n' \
        > /etc/skel/.gradle/gradle.properties
 
 # Assets used by the wpilib-sim module (placeholder card etc.).
 RUN mkdir -p /opt/wpilib-sim && chmod 755 /opt/wpilib-sim
 COPY assets/ /opt/wpilib-sim/
+
+# WPILib VS Code extension, pinned. Open VSX — where code-server installs
+# extensions from — stopped at 2021.3.1, which generates Gradle-6 projects that
+# cannot build on JDK 17. WPILib ships current versions only as GitHub-release
+# VSIXs; the wpilib-sim module installs this file into code-server at start.
+ARG WPILIB_EXT_VERSION=2026.2.1
+RUN curl -fsSL -o "/opt/wpilib-sim/vscode-wpilib-${WPILIB_EXT_VERSION}.vsix" \
+      "https://github.com/wpilibsuite/vscode-wpilib/releases/download/v${WPILIB_EXT_VERSION}/vscode-wpilib-${WPILIB_EXT_VERSION}.vsix" \
+  && chmod a+r "/opt/wpilib-sim/vscode-wpilib-${WPILIB_EXT_VERSION}.vsix"
 
 USER coder
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-${TARGETARCH:-arm64}

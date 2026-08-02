@@ -209,4 +209,36 @@ EOF
   done
 ) > /dev/null 2>&1 &
 
+# --- WPILib VS Code extension pin ---------------------------------------------
+# Open VSX (code-server's marketplace) stopped at vscode-wpilib 2021.3.1, which
+# generates Gradle-6 projects that cannot build on JDK 17. The image bakes the
+# current VSIX; install it once code-server is up, replacing any stale version.
+# The template must NOT also list wpilibsuite.vscode-wpilib in the code-server
+# module's extensions, or the two installers race.
+(
+  vsix="$(ls /opt/wpilib-sim/vscode-wpilib-*.vsix 2> /dev/null | head -1)"
+  if [ -n "$vsix" ]; then
+    ver="$${vsix##*vscode-wpilib-}"
+    ver="$${ver%.vsix}"
+    ext_dir="$HOME/.local/share/code-server/extensions"
+    for _ in $(seq 1 60); do
+      cs=""
+      if [ -x /tmp/code-server/bin/code-server ]; then
+        cs=/tmp/code-server/bin/code-server
+      elif command -v code-server > /dev/null 2>&1; then
+        cs=code-server
+      fi
+      if [ -n "$cs" ]; then
+        if [ ! -d "$ext_dir/wpilibsuite.vscode-wpilib-$ver" ]; then
+          rm -rf "$ext_dir"/wpilibsuite.vscode-wpilib-* 2> /dev/null || true
+          "$cs" --install-extension "$vsix" --force \
+            && log "installed vscode-wpilib $ver from baked VSIX"
+        fi
+        break
+      fi
+      sleep 5
+    done
+  fi
+) >> /tmp/wpilib-sim-ext.log 2>&1 &
+
 log "ready"
