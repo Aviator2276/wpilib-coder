@@ -57,12 +57,36 @@ durable state.
 3. Confirm registry namespace `aviator2277` (placeholder; rename dir if different).
 4. Prod template needs: memory 2048→3072, image swap, drop openjdk-25 install (see README "Deploying").
 
+## Live coder-server E2E — PASSED (2026-08-02)
+
+Local `coder server` (brew, v2.35.3) + pushed `test/template` + workspace `sim-test`:
+
+- Workspace Started/healthy on `wpilib-workspace:2026`; module `coder_script` ran clean.
+- Xvnc `:44092 -websocketPort 54092 -interface 127.0.0.1`, DLP clipboard off, FrameRate 24,
+  quality 3–6 — all module knobs present in the real process args. **No raw RFB TCP listener**
+  (only 54092 listening). App healthcheck (basic-auth URL) = **healthy**.
+- `coder ssh` env: `DISPLAY=:44092  LIBGL_ALWAYS_SOFTWARE=1  CODER_WPILIB_SIM_PASSWORD` set →
+  `./gradlew simulateJava` with **zero exports** produced the full sim GUI (screenshot verified).
+- **Two real bugs found and fixed live:**
+  1. *Preseed race:* project created+simulated inside the scan interval persisted WPILib's
+     fps=120 forever (never-overwrite rule). Fix: one-time 120→30 adjustment gated by a
+     sentinel (`.wpilib/.sim-fps-preseeded`), skipped while a sim is on the display; 15 s scan.
+     Verified: after restart file showed fps=30 + marker.
+  2. *Stacking:* with no WM, map order does NOT guarantee the sim covers the placeholder —
+     feh sat above the sim. Fix: raise-watcher in xstartup (xdotool windowraise every 3 s).
+     Verified via X stacking order (`xwininfo -root -children`): raising feh over the sim is
+     reverted by the watcher within 5 s.
+- Note: kasm `/api/get_screenshot` can serve stale frames with no client attached — use
+  `xwininfo` stacking for ground truth in tests, not screenshot bytes.
+- `coder templates push` only uploads the template dir → module is **vendored** at
+  `test/template/modules/wpilib-sim` (sync copies after edits); prod uses git/registry source.
+
 ## Next actions (in order)
 
-1. Background image rebuild (sim natives seed) — on completion rerun E2E:
-   container `wpilib-e2e` flow = run rendered run.sh, launch `simulateJava --offline`,
-   assert window covers placeholder (screenshot), then kill sim → placeholder returns.
-   Rendered script at scratchpad/run_rendered.sh; creds coder/e2etestpass123, port 16901, display :6901.
-2. Local coder-server E2E (install coder CLI, `coder server`, push `test/template`, create
-   workspace, click-path check). Template's entrypoint already rewrites localhost→host.docker.internal.
-3. Optional: `coder templates push` of prod template once user applies README steps.
+1. Image rebuild w/ sim-natives seed (running; first background attempt looked wedged and was
+   restarted in foreground). On completion: rerun offline `simulateJavaRelease` check in a
+   fresh container; then `coder update sim-test` and confirm cold-start sim launch needs no
+   downloads.
+2. Cleanup: stop local coder server (`pkill -f "coder server"`), remove test containers
+   (wpilib-spike, wpilib-e2e, wpilib-prodtest), stop workspace. Document restart commands.
+3. User items: registry namespace confirmation, image registry push, prod VPN egress check.
