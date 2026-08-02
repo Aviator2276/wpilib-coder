@@ -317,7 +317,7 @@ resource "random_integer" "sim_port" {
 
 module "wpilib_sim" {
   count    = data.coder_workspace.me.start_count
-  source   = "../../registry/aviator2277/modules/wpilib-sim"
+  source   = "./modules/wpilib-sim" # vendored copy of ../../registry/...; prod: registry/git source
   agent_id = coder_agent.main.id
   port     = random_integer.sim_port.result
   order    = 3
