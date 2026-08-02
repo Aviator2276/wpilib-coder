@@ -36,9 +36,12 @@ button, a locked-down single-app VNC session, zero user configuration.
    ```
 
 2. In the production template, set the workspace container image to that tag, bump the
-   container memory limit to **3072 MB** (measured requirement; 2048 will OOM during builds),
-   and remove the `openjdk-25-jdk` startup install — **JDK 25 breaks GradleRIO 2026 builds**
-   (WPILib pins source compatibility to 17); the image ships 17.
+   container memory limit to **4096 MB** (2048 will OOM during builds; 3072 ran at 85%+ with
+   the Java language server active), and remove the `openjdk-25-jdk` startup install —
+   **JDK 25 breaks GradleRIO 2026 builds** (WPILib pins source compatibility to 17); the
+   image ships 17. Copy the memory-discipline block from `test/template/main.tf`'s
+   startup_script: it caps the Java language server (defaults to 1 GB per instance, and
+   several can run) and lets the Gradle daemon exit after 2 idle minutes.
 
 3. Add the module (mirror of `test/template/main.tf`'s tail):
 
@@ -86,13 +89,18 @@ button, a locked-down single-app VNC session, zero user configuration.
   user already has a shell via code-server. Containment comes from container limits, the
   netns, and Coder auth.
 
-## Measured performance (3 GB / 2 vCPU cap, no GPU)
+## Measured performance (2 vCPU cap, no GPU)
 
 | State | CPU | RAM |
 |---|---|---|
 | Sim idle @ 120 fps (WPILib default) | 191–200 % (pegged) | ~980 MB |
 | Sim idle @ 30 fps (module preseed) | **~82 %** | **~615 MB** |
 | Fresh-user first build (RO cache, offline) | — | 9 s wall |
+| Full IDE session (code-server + Java LS + sim) | — | ~2.6 GB uncapped → 4 GB limit |
+
+Biggest RAM consumers are not the sim: the Java language server (redhat.java, 1 GB default
+per instance — capped to 400 MB via machine settings) and Gradle daemons (~400 MB — now exit
+after 2 idle minutes).
 
 Client-attached encoder cost is not included (measured without an active browser viewer);
 KasmVNC encodes only while a client is connected.

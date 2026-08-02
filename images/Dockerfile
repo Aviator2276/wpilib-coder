@@ -74,10 +74,16 @@ RUN su coder -c 'cd /opt/wpilib-seed/project \
 # wrapper distribution (~130 MB one-time) and build-local state.
 ENV GRADLE_RO_DEP_CACHE=/opt/wpilib-seed/gradle/caches
 
-# Cap Gradle's JVM globally — 3 GB workspaces cannot afford the 1.5 GB default.
+# Memory discipline for 4 GB workspaces. Gradle: capped JVM + a 2-minute daemon
+# idle timeout so the ~400 MB daemon frees itself while the user is simming, not
+# building. Java language server (redhat.java): defaults to -Xmx1G per instance
+# and code-server can run several; cap it via machine-level settings.
 RUN mkdir -p /etc/skel/.gradle \
-  && printf 'org.gradle.jvmargs=-Xmx768m -XX:MaxMetaspaceSize=384m\norg.gradle.parallel=false\n' \
-       > /etc/skel/.gradle/gradle.properties
+  && printf 'org.gradle.jvmargs=-Xmx768m -XX:MaxMetaspaceSize=384m\norg.gradle.parallel=false\norg.gradle.daemon.idletimeout=120000\n' \
+       > /etc/skel/.gradle/gradle.properties \
+  && mkdir -p /etc/skel/.local/share/code-server/Machine \
+  && printf '{\n  "java.jdt.ls.vmargs": "-XX:+UseParallelGC -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90 -Dsun.zip.disableMemoryMapping=true -Xmx400m -Xms100m -XX:MaxMetaspaceSize=256m"\n}\n' \
+       > /etc/skel/.local/share/code-server/Machine/settings.json
 
 # Assets used by the wpilib-sim module (placeholder card etc.).
 RUN mkdir -p /opt/wpilib-sim && chmod 755 /opt/wpilib-sim

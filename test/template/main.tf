@@ -153,6 +153,20 @@ resource "coder_agent" "main" {
 
     # JDK 17 (WPILib 2026 requirement) is baked into the image; the old
     # openjdk-25 install here broke GradleRIO builds and cost minutes per start.
+
+    # Memory discipline (idempotent for homes created before the image change):
+    # free the Gradle daemon after 2 idle minutes, cap the Java language server
+    # (defaults to -Xmx1G per instance; several can run at once).
+    mkdir -p ~/.gradle ~/.local/share/code-server/Machine
+    grep -q daemon.idletimeout ~/.gradle/gradle.properties 2>/dev/null \
+      || echo 'org.gradle.daemon.idletimeout=120000' >> ~/.gradle/gradle.properties
+    if [ ! -f ~/.local/share/code-server/Machine/settings.json ]; then
+      cat > ~/.local/share/code-server/Machine/settings.json << 'JDTLS'
+{
+  "java.jdt.ls.vmargs": "-XX:+UseParallelGC -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90 -Dsun.zip.disableMemoryMapping=true -Xmx400m -Xms100m -XX:MaxMetaspaceSize=256m"
+}
+JDTLS
+    fi
   EOT
 
   # These environment variables allow you to make Git commits right away after creating a
@@ -266,7 +280,7 @@ resource "docker_container" "workspace" {
   # Limit resources
   cpus        = 3
   memory      = 3072
-  memory_swap = 3072
+  memory_swap = 4096
 
   # Uses lower() to avoid Docker restriction on container names.
   name = "coder-${data.coder_workspace_owner.me.name}-${lower(data.coder_workspace.me.name)}"
