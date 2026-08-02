@@ -81,12 +81,22 @@ Local `coder server` (brew, v2.35.3) + pushed `test/template` + workspace `sim-t
 - `coder templates push` only uploads the template dir → module is **vendored** at
   `test/template/modules/wpilib-sim` (sync copies after edits); prod uses git/registry source.
 
-## Next actions (in order)
+## Image seed — RESOLVED (2026-08-02)
 
-1. Image rebuild w/ sim-natives seed (running; first background attempt looked wedged and was
-   restarted in foreground). On completion: rerun offline `simulateJavaRelease` check in a
-   fresh container; then `coder update sim-test` and confirm cold-start sim launch needs no
-   downloads.
-2. Cleanup: stop local coder server (`pkill -f "coder server"`), remove test containers
-   (wpilib-spike, wpilib-e2e, wpilib-prodtest), stop workspace. Document restart commands.
-3. User items: registry namespace confirmation, image registry push, prod VPN egress check.
+The "wedged build" root cause: executing `simulateJavaRelease` in a Docker RUN launches a
+headless robot JVM that never exits; `timeout` kills only the gradlew client, the daemon +
+robot JVM survive, and the next gradle invocation blocks on the busy daemon forever.
+Fix: `simulateJavaRelease --dry-run` resolves all sim natives at configuration time with no
+execution (verified: 890 MB incl. halsim_gui downloaded in 11 s), and
+`--offline --dry-run` is the guard. **Build now takes 96 s.** Final image: 1.1 GB RO cache,
+`build` and `simulateJavaRelease` both pass fully offline in a fresh container.
+Workspace `sim-test` restarted onto the final image: healthy, DISPLAY set, halsim in cache.
+
+## Remaining user items
+
+1. Registry namespace confirmation (`aviator2277` placeholder; rename dir if different).
+2. Multi-arch image push: `docker buildx build --platform linux/amd64,linux/arm64 -t <reg>/wpilib-workspace:2026 --push images/`
+3. Prod VPN egress check (frcmaven + plugins.gradle.org from OpenVPN-Client container).
+4. Local test env is left RUNNING for hands-on trial: coder server http://localhost:3000
+   (admin@example.com / LocalTest#2026), workspace `sim-test`. Teardown:
+   `coder delete sim-test --yes && pkill -f "coder server"`.

@@ -54,15 +54,15 @@ RUN curl -fsSL \
 # then expose the populated cache read-only to all users. Gradle resolves from
 # GRADLE_RO_DEP_CACHE without copying into the per-user cache.
 COPY --chown=coder:coder seed/ /opt/wpilib-seed/project/
-# simulateJavaRelease is invoked deliberately: it is the only task that resolves
-# the simulation-time native zips (halsim, opencv, cscore, ...) into the cache.
-# It fails at GLFW init because the build has no X display — by then every
-# download has landed, which is all we need. Guard: the offline retest below.
+# `simulateJavaRelease --dry-run` resolves the simulation-time native zips
+# (halsim, opencv, cscore, ...) at configuration time WITHOUT launching the
+# robot program — actually executing the task would start a headless robot JVM
+# that never exits and wedge the build. The offline dry-run is the guard: it
+# fails at configuration if any artifact is missing from the cache.
 RUN su coder -c 'cd /opt/wpilib-seed/project \
       && GRADLE_USER_HOME=/opt/wpilib-seed/gradle ./gradlew build -x test --console=plain \
-      && (timeout 300 env GRADLE_USER_HOME=/opt/wpilib-seed/gradle ./gradlew simulateJavaRelease --console=plain || true) \
-      && (GRADLE_USER_HOME=/opt/wpilib-seed/gradle ./gradlew simulateJavaRelease --offline --console=plain > /tmp/offline.log 2>&1 || true) \
-      && ! grep -q "Could not download" /tmp/offline.log' \
+      && GRADLE_USER_HOME=/opt/wpilib-seed/gradle ./gradlew simulateJavaRelease --dry-run --console=plain \
+      && GRADLE_USER_HOME=/opt/wpilib-seed/gradle ./gradlew simulateJavaRelease --offline --dry-run --console=plain' \
   # Drop everything except the dependency cache and the wrapper distribution.
   && rm -rf /opt/wpilib-seed/gradle/daemon /opt/wpilib-seed/gradle/kotlin-profile \
             /opt/wpilib-seed/gradle/workers /opt/wpilib-seed/gradle/native \
