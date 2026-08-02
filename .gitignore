@@ -1,3 +1,6 @@
 spike/robot/build/
 spike/robot/.gradle/
 *.log
+.terraform/
+*.tfstate*
+.terraform.lock.hcl
