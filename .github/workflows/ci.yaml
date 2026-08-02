@@ -28,8 +28,9 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-          # SC1083/SC2154: ${VAR} tokens belong to terraform templatefile, not shell.
-          shellcheck -e SC1083,SC2154 registry/aviator2277/modules/wpilib-sim/run.sh spike/entry.sh
+          # SC1083/SC2154/SC2269: ${VAR} tokens are terraform templatefile
+          # substitutions, not shell self-assignments. SC2012: controlled glob.
+          shellcheck -e SC1083,SC2154,SC2269,SC2012 registry/aviator2277/modules/wpilib-sim/run.sh spike/entry.sh
 
   template:
     runs-on: ubuntu-latest
