@@ -61,12 +61,20 @@ button, a locked-down single-app VNC session, zero user configuration.
    `plugins.gradle.org` return HTTP 200 — GradleRIO needs both. (Verified reachable from
    this dev machine; the VPN egress policy is the untested link.)
 
-5. The user opens **WPILib Simulator** on the dashboard and enters username `coder` with
-   the password from `$CODER_WPILIB_SIM_PASSWORD` (visible in the workspace terminal via
-   `echo $CODER_WPILIB_SIM_PASSWORD`) — once per browser session.
+5. The user opens **WPILib Simulator** on the dashboard and logs in with **their Coder
+   username** and the **Simulator Password they chose when creating the workspace** (a
+   `coder_parameter`, changeable on workspace update) — once per browser session. If they
+   left it blank, a per-workspace random password is used instead, readable in the workspace
+   terminal via `echo $CODER_WPILIB_SIM_PASSWORD`. Wire-up in the template: pass
+   `vnc_username = lower(data.coder_workspace_owner.me.name)` and
+   `vnc_password = data.coder_parameter.sim_password.value` to the module (see
+   `test/template/main.tf` for the parameter block).
 
 ## Security notes (read before deploying)
 
+- **User-chosen VNC passwords** are only as strong as the user makes them, and in the shared
+  netns a weak one is guessable by sibling workspaces. The template enforces a 6-character
+  minimum (KasmVNC's floor); encourage longer.
 - **Shared network namespace:** the prod template runs every workspace inside the
   `OpenVPN-Client` container's netns, so `127.0.0.1` is common to all workspaces. This module
   therefore enforces basic auth on the VNC endpoint. **The same exposure exists today for

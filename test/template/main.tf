@@ -315,10 +315,29 @@ resource "random_integer" "sim_port" {
   max = 65535
 }
 
+data "coder_parameter" "sim_password" {
+  name         = "Simulator Password"
+  description  = "Password for opening the WPILib Simulator viewer (username is your Coder username). Leave blank for a random one. At least 6 characters; longer is safer — other workspace users share this network."
+  type         = "string"
+  form_type    = "input"
+  default      = ""
+  mutable      = true
+  order        = 10
+  styling = jsonencode({
+    mask_input = true
+  })
+  validation {
+    regex = "^(.{6,})?$"
+    error = "Password must be empty (random) or at least 6 characters."
+  }
+}
+
 module "wpilib_sim" {
-  count    = data.coder_workspace.me.start_count
-  source   = "./modules/wpilib-sim" # vendored copy of ../../registry/...; prod: registry/git source
-  agent_id = coder_agent.main.id
-  port     = random_integer.sim_port.result
-  order    = 3
+  count        = data.coder_workspace.me.start_count
+  source       = "./modules/wpilib-sim" # vendored copy of ../../registry/...; prod: registry/git source
+  agent_id     = coder_agent.main.id
+  port         = random_integer.sim_port.result
+  order        = 3
+  vnc_username = lower(data.coder_workspace_owner.me.name)
+  vnc_password = data.coder_parameter.sim_password.value
 }

@@ -121,13 +121,32 @@ variable "subdomain" {
   default     = true
 }
 
+variable "vnc_username" {
+  type        = string
+  description = "Basic-auth username for the VNC endpoint. Pass the workspace owner's name for a friendly login; defaults to \"coder\"."
+  default     = "coder"
+}
+
+variable "vnc_password" {
+  type        = string
+  description = "Basic-auth password for the VNC endpoint, e.g. from a coder_parameter so the user picks it. Minimum 6 characters (KasmVNC requirement). Leave empty to use a per-workspace random credential. A user-chosen password is only as strong as the user makes it — in a shared network namespace, prefer 12+ characters."
+  default     = ""
+  sensitive   = true
+
+  validation {
+    condition     = var.vnc_password == "" || length(var.vnc_password) >= 6
+    error_message = "vnc_password must be empty (random) or at least 6 characters (KasmVNC minimum)."
+  }
+}
+
 locals {
   # One X display per workspace: display numbers become abstract unix sockets
   # (@/tmp/.X11-unix/XN) which live in the *network* namespace. Workspaces that
   # share a netns (network_mode = "container:...") would collide on a fixed
   # number, so derive it from the (per-workspace) port.
   display_number = var.port - 10000
-  vnc_user       = "coder"
+  vnc_user       = var.vnc_username
+  vnc_password   = var.vnc_password != "" ? var.vnc_password : random_password.vnc.result
 }
 
 # Basic-auth credential for the VNC endpoint. In a shared network namespace,
@@ -168,7 +187,13 @@ resource "coder_env" "wpigui_force_renderer" {
 resource "coder_env" "vnc_password" {
   agent_id = var.agent_id
   name     = "CODER_WPILIB_SIM_PASSWORD"
-  value    = random_password.vnc.result
+  value    = local.vnc_password
+}
+
+resource "coder_env" "vnc_username" {
+  agent_id = var.agent_id
+  name     = "CODER_WPILIB_SIM_USERNAME"
+  value    = local.vnc_user
 }
 
 resource "coder_script" "wpilib_sim" {
@@ -207,7 +232,7 @@ resource "coder_app" "wpilib_sim" {
   healthcheck {
     # Every kasm endpoint requires basic auth; embed the credential so the
     # agent's probe passes. It is already in state via random_password.
-    url       = "http://${local.vnc_user}:${random_password.vnc.result}@localhost:${var.port}/app"
+    url       = "http://${local.vnc_user}:${local.vnc_password}@localhost:${var.port}/app"
     interval  = 5
     threshold = 5
   }
