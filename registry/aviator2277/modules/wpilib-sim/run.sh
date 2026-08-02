@@ -154,15 +154,24 @@ log "KasmVNC up: display :$${DISPLAY_NUMBER}, http://127.0.0.1:$${PORT} (basic a
 
 # --- sim frame-rate preseed ---------------------------------------------------
 # GradleRIO sims persist GUI state to <project>/simgui-window.json and default
-# to fps=120, which pegs a software-rendered CPU. Preseed fps=$${SIM_FPS} into
-# any robot project that has no state yet; never touch existing files (user
-# preference wins). Rescan cheaply so projects created later are covered.
+# to fps=120, which pegs a software-rendered CPU. Two cases per robot project:
+#   1. No state file yet -> write one with fps=$${SIM_FPS}.
+#   2. State file says 120 (a sim launched before the preseed reached it and
+#      persisted the WPILib default) -> adjust to $${SIM_FPS} ONCE, marked by a
+#      sentinel so a user who deliberately re-selects 120 afterwards is never
+#      overridden again. Skipped while a sim is on the display: the running
+#      process would just rewrite the file from memory on exit.
 preseed() {
+  sim_running=0
+  if DISPLAY=":$${DISPLAY_NUMBER}" xdotool search --name "Robot Simulation" > /dev/null 2>&1; then
+    sim_running=1
+  fi
   # shellcheck disable=SC2231 # the glob must stay unquoted; the dir var is terraform-substituted
   for d in ${PROJECTS_DIR}/*/ "$HOME"/*/; do
     [ -f "$d/.wpilib/wpilib_preferences.json" ] || continue
-    [ -e "$d/simgui-window.json" ] && continue
-    cat > "$d/simgui-window.json" << EOF
+    marker="$d/.wpilib/.sim-fps-preseeded"
+    if [ ! -e "$d/simgui-window.json" ]; then
+      cat > "$d/simgui-window.json" << EOF
 {
   "MainWindow": {
     "GLOBAL": {
@@ -174,14 +183,21 @@ preseed() {
   }
 }
 EOF
-    log "preseeded sim settings (fps=$${SIM_FPS}) into $d"
+      touch "$marker"
+      log "preseeded sim settings (fps=$${SIM_FPS}) into $d"
+    elif [ ! -e "$marker" ] && [ "$sim_running" -eq 0 ] \
+      && grep -q '"fps": "120"' "$d/simgui-window.json"; then
+      sed -i "s/\"fps\": \"120\"/\"fps\": \"$${SIM_FPS}\"/" "$d/simgui-window.json"
+      touch "$marker"
+      log "adjusted sim fps 120 -> $${SIM_FPS} in $d (one-time)"
+    fi
   done
 }
 
 (
   while :; do
     preseed
-    sleep 60
+    sleep 15
   done
 ) > /dev/null 2>&1 &
 
