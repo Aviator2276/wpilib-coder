@@ -367,4 +367,7 @@ module "wpilib_sim" {
   order        = 3
   vnc_username = lower(data.coder_workspace_owner.me.name)
   vnc_password = data.coder_parameter.sim_password.value
+  # Path-based sharing: works on any Coder deployment without
+  # --wildcard-access-url / wildcard DNS / wildcard TLS.
+  subdomain = false
 }

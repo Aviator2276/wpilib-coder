@@ -64,7 +64,25 @@ button, a locked-down single-app VNC session, zero user configuration.
    `plugins.gradle.org` return HTTP 200 — GradleRIO needs both. (Verified reachable from
    this dev machine; the VPN egress policy is the untested link.)
 
-5. The user opens **WPILib Simulator** on the dashboard and logs in with **their Coder
+5. **Subdomain vs path-based apps.** The module defaults to `subdomain = true`, which
+   requires the Coder server to have a wildcard access URL. If your deployment doesn't
+   (symptom: the dashboard button is greyed out with a "subdomain applications are not
+   configured" banner), either:
+
+   - **Easiest — pass `subdomain = false` to the module** (as `test/template/main.tf` now
+     does). Path-based sharing needs no DNS, TLS, or server-flag changes; the module patches
+     KasmVNC's web root to work under a path prefix automatically. Small caveat: path-based
+     apps share the main Coder origin, which is why the module keeps its own basic auth on.
+   - **Or configure wildcard apps on the server** (better isolation, needed only once):
+     1. DNS: wildcard record `*.coder.example.com` → the same host as your access URL.
+     2. TLS: a certificate covering `*.coder.example.com` (Let's Encrypt DNS-01, or your
+        reverse proxy's wildcard cert).
+     3. Coder server flag/env: `CODER_WILDCARD_ACCESS_URL=*.coder.example.com` (or
+        `--wildcard-access-url`), reverse proxy forwarding that wildcard host to Coder.
+     Your API-key/Authentik gate on workspace *creation* is unrelated — app routing happens
+     after the workspace exists and is authenticated by Coder session cookies either way.
+
+6. The user opens **WPILib Simulator** on the dashboard and logs in with **their Coder
    username** and the **Simulator Password they chose when creating the workspace** (a
    `coder_parameter`, changeable on workspace update) — once per browser session. If they
    left it blank, a per-workspace random password is used instead, readable in the workspace
