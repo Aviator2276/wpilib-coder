@@ -169,9 +169,12 @@ try:
         cfg = json.load(f)
 except (FileNotFoundError, ValueError):
     cfg = {}
-cfg.setdefault("java.jdt.ls.vmargs",
-    "-XX:+UseParallelGC -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90 "
-    "-Dsun.zip.disableMemoryMapping=true -Xmx400m -Xms100m -XX:MaxMetaspaceSize=256m")
+# Managed keys: force-set so upgrades apply (an OOM-killed language server is
+# what breaks "Simulate Robot Code" — see PLAN.md).
+cfg["java.jdt.ls.vmargs"] = ("-XX:+UseParallelGC -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90 -Dsun.zip.disableMemoryMapping=true -Xmx1G -Xms100m -XX:MaxMetaspaceSize=512m")
+cfg["java.gradle.buildServer.enabled"] = "off"
+cfg["java.import.gradle.java.home"] = "/usr/lib/jvm/java-17-openjdk-arm64"
+cfg["java.configuration.detectJdksAtStart"] = False
 with open(p, "w") as f:
     json.dump(cfg, f, indent=2)
 JDTLS
@@ -288,7 +291,7 @@ resource "docker_container" "workspace" {
   # Limit resources
   cpus        = 3
   memory      = 4096
-  memory_swap = 4096
+  memory_swap = 6144
 
   # Uses lower() to avoid Docker restriction on container names.
   name = "coder-${data.coder_workspace_owner.me.name}-${lower(data.coder_workspace.me.name)}"

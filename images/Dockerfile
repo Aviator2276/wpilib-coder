@@ -82,7 +82,7 @@ RUN mkdir -p /etc/skel/.gradle \
   && printf 'org.gradle.jvmargs=-Xmx768m -XX:MaxMetaspaceSize=384m\norg.gradle.parallel=false\norg.gradle.daemon.idletimeout=120000\n' \
        > /etc/skel/.gradle/gradle.properties \
   && mkdir -p /etc/skel/.local/share/code-server/Machine \
-  && printf '{\n  "java.jdt.ls.vmargs": "-XX:+UseParallelGC -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90 -Dsun.zip.disableMemoryMapping=true -Xmx400m -Xms100m -XX:MaxMetaspaceSize=256m"\n}\n' \
+  && printf '{\n  "java.jdt.ls.vmargs": "-XX:+UseParallelGC -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90 -Dsun.zip.disableMemoryMapping=true -Xmx1G -Xms100m -XX:MaxMetaspaceSize=512m",\n  "java.gradle.buildServer.enabled": "off",\n  "java.import.gradle.java.home": "/usr/lib/jvm/java-17-openjdk-arm64",\n  "java.configuration.detectJdksAtStart": false\n}\n' \
        > /etc/skel/.local/share/code-server/Machine/settings.json
 
 # Assets used by the wpilib-sim module (placeholder card etc.).

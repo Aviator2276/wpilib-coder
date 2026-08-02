@@ -109,6 +109,23 @@ VNC login is now workspace-owner username + user-set "Simulator Password" parame
 Git history rewritten: >100 MB blobs (spike build artifacts, .terraform providers) purged,
 co-author trailers removed; user must `git push --force -u origin main`.
 
+## "Client is not running" — DIAGNOSED + FIXED (2026-08-02)
+
+Opus-agent forensics: "Simulate Robot Code" launches a `type:"java"` VS Code debug session
+(vscode-wpilib 2026.2.1 has no non-debug Java simulate path); that goes through redhat.java's
+language client. The kernel had **OOM-killed the JDT language server** inside the 3 GiB cgroup
+(dmesg CONSTRAINT_MEMCG kills match the client.log shutdowns to the second) → every later
+launch got vscode-languageclient's "Client is not running". Plain `gradlew simulateJava`
+bypasses the LS, which is why it worked. All Java-extension versions on Open VSX are current —
+no more VSIX pinning needed.
+Fixes: 4096 MB memory / 6144 memory_swap; machine settings force-set `java.jdt.ls.vmargs`
+-Xmx1G (default 2G), `java.gradle.buildServer.enabled=off` (kills a gradle-server JVM + its
+daemon per window), `java.import.gradle.java.home`=system JDK 17 (stops a second daemon family
+on redhat's JRE 21), `java.configuration.detectJdksAtStart=false`; gradle daemon 2-min idle
+exit; broken 2021 SimpleSim parked at ~/SimpleSim.2021.bak.
+NOT human-verified: the actual button click needs a browser — user must confirm. If it still
+fails at 4 GB, next step is 6144 MB (agent's safe value).
+
 ## Remaining user items
 
 1. Registry namespace confirmation (`aviator2277` placeholder; rename dir if different).
