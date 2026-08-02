@@ -73,14 +73,3 @@ jobs:
       - name: bun test
         working-directory: registry
         run: bun test registry/aviator2277/modules/wpilib-sim/main.test.ts
-
-  # Validates the workspace image builds on amd64 (prod arch). The multi-arch
-  # build-and-push (amd64+arm64) is done manually or once registry secrets are
-  # configured — the arm64 leg runs Gradle under QEMU and is slow by nature.
-  image-amd64:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - name: build
-        run: docker buildx build --platform linux/amd64 -t wpilib-workspace:ci images/

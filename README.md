@@ -28,11 +28,15 @@ button, a locked-down single-app VNC session, zero user configuration.
 
 ## Deploying to prod
 
-1. Build and push the image (multi-arch):
+1. Get the image. CI builds and pushes multi-arch automatically on every push to `main`
+   touching `images/**` (native amd64 + arm64 runners, merged manifest):
+   **`ghcr.io/aviator2276/wpilib-workspace:2026`**. Make the GHCR package public once
+   (repo → Packages → wpilib-workspace → settings → Change visibility) so the prod Docker
+   host can pull anonymously — or `docker login ghcr.io` on that host. Manual fallback:
 
    ```sh
    docker buildx build --platform linux/amd64,linux/arm64 \
-     -t <registry>/wpilib-workspace:2026 --push images/
+     -t ghcr.io/aviator2276/wpilib-workspace:2026 --push images/
    ```
 
 2. In the production template, set the workspace container image to that tag, bump the
