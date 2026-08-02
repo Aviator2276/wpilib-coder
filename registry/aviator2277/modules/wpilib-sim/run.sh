@@ -106,12 +106,20 @@ printf '%s\n%s\n' "$CODER_WPILIB_SIM_PASSWORD" "$CODER_WPILIB_SIM_PASSWORD" \
   | kasmvncpasswd -wo -u "$VNC_USER"
 
 # --- single-app X session -----------------------------------------------------
-# No window manager and no other clients. The placeholder loop is the entire
-# session: the sim GUI, mapped later, stacks above it; when the sim exits the
-# card is what remains. feh restarts if a stray keypress kills it.
+# No window manager and no other clients: the placeholder card plus a watcher
+# that keeps the sim window raised above it. With no WM there is no reliable
+# map-order stacking (verified: feh can end up over a later-mapped sim), so the
+# watcher raises the sim every 3 s while it exists; when the sim exits the card
+# is what remains. feh restarts if a stray keypress kills it.
 cat > "$HOME/.vnc/xstartup-wpilib" << EOF
 #!/bin/sh
 xsetroot -solid "#12161e" 2> /dev/null || true
+(
+  while :; do
+    xdotool search --name "Robot Simulation" windowraise 2> /dev/null
+    sleep 3
+  done
+) &
 while :; do
   if [ -f "$PLACEHOLDER" ]; then
     feh --fullscreen --no-menus "$PLACEHOLDER" 2> /dev/null
