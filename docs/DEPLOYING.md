@@ -21,13 +21,13 @@ docker buildx build --platform linux/amd64,linux/arm64 \
   85%+ with the Java language server active.
 - Remove the `openjdk-25-jdk` startup install — **JDK 25 breaks GradleRIO 2026 builds**
   (WPILib pins source compatibility to 17); the image ships 17.
-- Copy the memory-discipline block from `test/template/main.tf`'s `startup_script`: it caps
+- Copy the memory-discipline block from the `Java-Python-Developer` template in the Custom-Coder-Templates repo's `startup_script`: it caps
   the Java language server (defaults to 1 GB per instance, and several can run) and lets the
   Gradle daemon exit after 2 idle minutes.
 
 ## 3. Add the module
 
-Mirror of `test/template/main.tf`'s tail:
+Mirror of the `Java-Python-Developer` template in the Custom-Coder-Templates repo's tail:
 
 ```tf
 resource "random_integer" "sim_port" {
@@ -56,7 +56,7 @@ The module defaults to `subdomain = true`, which requires the Coder server to ha
 access URL. If your deployment doesn't (symptom: the dashboard button is greyed out with a
 "subdomain applications are not configured" banner), either:
 
-- **Easiest — pass `subdomain = false` to the module** (as `test/template/main.tf` now does).
+- **Easiest — pass `subdomain = false` to the module.**
   Path-based sharing needs no DNS, TLS, or server-flag changes; the module patches KasmVNC's
   web root to work under a path prefix automatically. Small caveat: path-based apps share the
   main Coder origin, which is why the module keeps its own basic auth on.
@@ -104,7 +104,7 @@ per-workspace random password is used instead, readable in the workspace termina
 
 Wire-up in the template: pass `vnc_username = lower(data.coder_workspace_owner.me.name)` and
 `vnc_password = data.coder_parameter.sim_password.value` to the module (see
-`test/template/main.tf` for the parameter block).
+the `Java-Python-Developer` template in the Custom-Coder-Templates repo for the parameter block).
 
 ## How it works under the hood
 

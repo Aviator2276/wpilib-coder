@@ -127,14 +127,30 @@ hdr "5. NetworkTables port $NT_PORT binds in both workspaces (the original bug)"
 if [ -z "$WS_B" ]; then
   sk "needs a second running workspace"
 else
-  wex "$WS_A" "(nohup nc -l -p $NT_PORT >/dev/null 2>&1 &) ; sleep 1"
-  wex "$WS_B" "(nohup nc -l -p $NT_PORT >/dev/null 2>&1 &) ; sleep 1"
-  a_bound=$(wex "$WS_A" "ss -tln 2>/dev/null | grep -c ':$NT_PORT'" || echo 0)
-  b_bound=$(wex "$WS_B" "ss -tln 2>/dev/null | grep -c ':$NT_PORT'" || echo 0)
-  if [ "${a_bound:-0}" -ge 1 ] && [ "${b_bound:-0}" -ge 1 ]; then
-    ok "both workspaces bound $NT_PORT simultaneously — collision fixed"
+  # Bind via nc, falling back to python3: a stock workspace image may have neither.
+  PYBIND="import socket,time;s=socket.socket();s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);s.bind((\"0.0.0.0\",$NT_PORT));s.listen(1);time.sleep(45)"
+  listen() {
+    wex "$1" "command -v nc >/dev/null 2>&1 && { nohup nc -l -p $NT_PORT >/dev/null 2>&1 & sleep 1; exit 0; }
+              command -v python3 >/dev/null 2>&1 && { nohup python3 -c '$PYBIND' >/dev/null 2>&1 & sleep 1; exit 0; }
+              exit 3"
+  }
+  # grep -c prints 0 AND exits non-zero on no match, so keep the fallback inside
+  # the remote shell -- an outer `|| echo 0` appends a second line and breaks [ -ge ].
+  bound() { wex "$1" "ss -ltn 2>/dev/null | grep -c ':$NT_PORT' || true" | tr -d '\r' | head -1; }
+
+  listen "$WS_A"; a_rc=$?
+  listen "$WS_B"; b_rc=$?
+  if [ "$a_rc" = "3" ] || [ "$b_rc" = "3" ]; then
+    sk "no nc or python3 in the workspace image — cannot bind a test listener."
+    echo "        The image is likely stale: re-pull it on the Docker host"
+    echo "        (docker pull ghcr.io/aviator2276/wpilib-workspace:2026) and retry."
   else
-    no "only one workspace could bind $NT_PORT (A=$a_bound B=$b_bound) — still sharing a netns?"
+    a_bound=$(bound "$WS_A"); b_bound=$(bound "$WS_B")
+    if [ "${a_bound:-0}" -ge 1 ] && [ "${b_bound:-0}" -ge 1 ]; then
+      ok "both workspaces bound $NT_PORT simultaneously — collision fixed"
+    else
+      no "only one workspace could bind $NT_PORT (A=$a_bound B=$b_bound) — still sharing a netns?"
+    fi
   fi
 fi
 
@@ -143,7 +159,11 @@ hdr "6. Workspace A cannot reach workspace B"
 if [ -z "$WS_B" ]; then
   sk "needs a second running workspace"
 else
-  B_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' "$WS_B" | awk '{print $1}')
+  # network_mode= containers can present an empty Networks map; ask the container
+  # itself as the authoritative fallback.
+  B_IP=$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$v.IPAddress}} {{end}}' "$WS_B" | awk '{print $1}')
+  [ -n "$B_IP" ] || B_IP=$(docker inspect -f '{{.NetworkSettings.IPAddress}}' "$WS_B")
+  [ -n "$B_IP" ] || B_IP=$(wex "$WS_B" "ip -4 -o addr show scope global | awk '{print \$4}' | cut -d/ -f1 | head -1")
   echo "  workspace B address: ${B_IP:-<none>}"
   if [ -z "$B_IP" ]; then
     sk "could not determine B's address"

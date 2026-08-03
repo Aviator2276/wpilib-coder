@@ -166,6 +166,17 @@ dex iptables -A WPILIB-FWD -d "$SUBNET" -j DROP
 dex iptables -t nat -C POSTROUTING -s "$SUBNET" -o "$TUN_IF" -j MASQUERADE 2>/dev/null \
   || dex iptables -t nat -A POSTROUTING -s "$SUBNET" -o "$TUN_IF" -j MASQUERADE
 
+# MSS clamping. Workspaces have a 1500-byte MTU but egress through a tunnel with a
+# smaller one. Without this, the TCP handshake succeeds and then anything larger
+# than the tunnel MTU is silently dropped whenever path-MTU discovery is blocked --
+# DNS and pings work, TLS hangs forever, and a Coder agent sits at "connecting".
+# The shared-netns setup never needed this: workspaces used tun0 directly and
+# inherited its MTU.
+dex iptables -t mangle -C FORWARD -o "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN \
+    -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null \
+  || dex iptables -t mangle -A FORWARD -o "$TUN_IF" -p tcp --tcp-flags SYN,RST SYN \
+    -j TCPMSS --clamp-mss-to-pmtu
+
 log "gateway rules applied inside $VPN_CONTAINER"
 
 # --- 4. host-side pinning: the workspace subnet may ONLY talk to the gateway ---

@@ -21,7 +21,6 @@ dashboard to see it.
 |---|---|
 | `registry/aviator2277/modules/wpilib-sim/` | The Terraform module (main.tf, run.sh, tests) |
 | `images/Dockerfile` | The workspace image |
-| `test/template/main.tf` | Local-test copy of the production template |
 | `spike/` | The original feasibility spike, kept for reference |
 
 ## Using it
