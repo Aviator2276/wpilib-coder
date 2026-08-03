@@ -31,6 +31,8 @@ jobs:
           # SC1083/SC2154/SC2269: ${VAR} tokens are terraform templatefile
           # substitutions, not shell self-assignments. SC2012: controlled glob.
           shellcheck -e SC1083,SC2154,SC2269,SC2012 registry/aviator2277/modules/wpilib-sim/run.sh spike/entry.sh
+          # Host-side Unraid scripts are plain bash -- no templatefile tokens to exclude.
+          shellcheck scripts/vpn-gateway-ensure.sh scripts/netns-leak-test.sh
 
   template:
     runs-on: ubuntu-latest

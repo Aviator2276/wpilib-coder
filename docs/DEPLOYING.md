@@ -70,6 +70,30 @@ access URL. If your deployment doesn't (symptom: the dashboard button is greyed 
   Your API-key/Authentik gate on workspace *creation* is unrelated — app routing happens after
   the workspace exists and is authenticated by Coder session cookies either way.
 
+### Site-specific: Cloudflare + Traefik at chargingcourses.com
+
+Access URL is `labs.chargingcourses.com`; a wildcard `*.chargingcourses.com` exists and is
+served by Traefik behind a 443 port-forward (no Cloudflare tunnel).
+
+- **Subdomain apps are available.** The wildcard resolves for Coder's app-hostname format
+  (`8080--main--ws--user.chargingcourses.com` verified resolving), so `subdomain = true` is
+  usable once `CODER_WILDCARD_ACCESS_URL=*.chargingcourses.com` is set on the Coder server and
+  Traefik routes that wildcard to it. Note the wildcard is one label deep: it covers
+  `x.chargingcourses.com`, not `x.labs.chargingcourses.com`, so the wildcard access URL must
+  be at the apex level, not under `labs.`.
+- **The wildcard is Cloudflare-proxied** — it resolves to Cloudflare anycast, so app traffic
+  runs Cloudflare -> WAN:443 -> Traefik. For sim VNC that means continuous, bandwidth-heavy
+  traffic crossing the proxy, which adds latency for no benefit. Setting the wildcard record
+  to DNS-only (grey cloud) points it straight at the port-forward and keeps VNC on Traefik.
+  Worth doing before a class streams simultaneously.
+- **Agent traffic from the VPN exit IP.** Once workspaces route through the tunnel, the agent
+  reaches Coder from the VPN's exit address via Cloudflare. Cloudflare security settings (bot
+  fight mode, IP reputation, security level) can challenge or block commercial VPN ranges. If
+  agents stop connecting after the netns change, suspect this before suspecting the netns
+  work: add a WAF allow-rule for the exit IP, or bypass Cloudflare for the agent with a hosts
+  entry pointing the access-URL hostname at Traefik's LAN address plus a matching `CODER_IP`
+  exception (SNI still matches, so the certificate is unaffected).
+
 ## 6. How users log in
 
 The user opens **WPILib Simulator** on the dashboard and logs in with **their Coder username**
