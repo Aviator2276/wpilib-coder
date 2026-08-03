@@ -4,3 +4,4 @@ spike/robot/.gradle/
 .terraform/
 *.tfstate*
 .terraform.lock.hcl
+.DS_Store

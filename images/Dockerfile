@@ -24,6 +24,8 @@ USER root
 # --- Runtime dependencies ------------------------------------------------------
 # libatomic1: required by WPILib JNI libs (hard failure on arm64 without it).
 # feh/xdotool: used by the wpilib-sim module for the placeholder card and window checks.
+# iproute2: `ip route` sets the VPN-gateway default route at container start, and
+# `ss` is what the leak tests read; dnsutils/netcat are leak-test tooling only.
 # No xterm, no browser, no file manager: the VNC session must have nothing to fall
 # back to except the sim GUI.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -34,6 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxcursor1 libxinerama1 libxxf86vm1 libxkbcommon0 \
     xauth x11-xkb-utils xkb-data \
     xdotool feh \
+    iproute2 dnsutils netcat-openbsd \
     libdatetime-perl libhash-merge-simple-perl libswitch-perl \
     liblist-moreutils-perl libtry-tiny-perl libyaml-tiny-perl \
     libdatetime-timezone-perl ssl-cert \
