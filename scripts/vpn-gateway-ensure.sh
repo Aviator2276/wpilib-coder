@@ -120,6 +120,25 @@ elif [ "$attached" != "$VPN_IP" ]; then
   attach
 fi
 
+# --- 2b. the gateway must still have its own way out --------------------------
+# $NET_NAME has NAT disabled by design, so it cannot carry the gateway's own
+# traffic. If the container ends up with that as its default route -- e.g. its
+# original network was dropped during a disconnect/recreate cycle -- it has no
+# internet at all: openvpn cannot resolve or reach the VPN endpoint, and the
+# tunnel never comes up. Catch it here rather than let it look like a DNS fault.
+NET_GW=$(docker network inspect -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}' "$NET_NAME")
+def_gw=$(dex ip route 2>/dev/null | awk '/^default/{print $3; exit}')
+if [ -n "$NET_GW" ] && [ "$def_gw" = "$NET_GW" ]; then
+  nets=$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$VPN_CONTAINER")
+  die "$VPN_CONTAINER has no route to the internet: its default route is via $NET_GW,
+       which is $NET_NAME -- a network with NAT deliberately disabled. The tunnel cannot
+       come up from here, and openvpn will report 'Cannot resolve host address'.
+       Networks attached: $nets
+       It has lost its original network. Restore it in the Unraid Docker tab
+       (OpenVPN-Client -> Edit -> Apply recreates it with its configured network),
+       confirm the tunnel connects, then re-run this script with ALLOW_VPN_RESTART=1."
+fi
+
 # --- 3. forwarding + NAT + killswitch, inside the VPN container ---------------
 fwd=$(dex cat /proc/sys/net/ipv4/ip_forward 2>/dev/null || echo 0)
 [ "$fwd" = "1" ] || die "ip_forward=0 inside $VPN_CONTAINER. Add '--sysctl net.ipv4.ip_forward=1' to its Extra Parameters in the Unraid Docker tab and Apply (this recreates the container), then re-run."
