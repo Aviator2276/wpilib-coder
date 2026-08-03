@@ -121,6 +121,12 @@ variable "subdomain" {
   default     = true
 }
 
+variable "vnc_auth" {
+  type        = bool
+  description = "Require HTTP basic auth on the VNC endpoint. Needed when workspaces share a network namespace (127.0.0.1 is then common to all of them). With per-workspace namespaces, Coder's own session auth already gates the app, and leaving this on means a mistyped password is cached by the browser and returns 401 with no way to re-enter it."
+  default     = true
+}
+
 variable "vnc_username" {
   type        = string
   description = "Basic-auth username for the VNC endpoint. Pass the workspace owner's name for a friendly login; defaults to \"coder\"."
@@ -212,6 +218,7 @@ resource "coder_script" "wpilib_sim" {
     ENABLE_CLIPBOARD = var.enable_clipboard ? "true" : "false"
     KASM_VERSION     = var.kasm_version
     VNC_USER         = local.vnc_user
+    VNC_AUTH         = var.vnc_auth ? "true" : "false"
     PROJECTS_DIR     = var.projects_dir
     SUBDOMAIN        = tostring(var.subdomain)
     PATH_VNC_HTML    = var.subdomain ? "" : file("${path.module}/path_vnc.html")
@@ -232,7 +239,7 @@ resource "coder_app" "wpilib_sim" {
   healthcheck {
     # Every kasm endpoint requires basic auth; embed the credential so the
     # agent's probe passes. It is already in state via random_password.
-    url       = "http://${local.vnc_user}:${local.vnc_password}@localhost:${var.port}/app"
+    url       = var.vnc_auth ? "http://${local.vnc_user}:${local.vnc_password}@localhost:${var.port}/app" : "http://localhost:${var.port}/app"
     interval  = 5
     threshold = 5
   }

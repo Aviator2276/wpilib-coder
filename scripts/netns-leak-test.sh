@@ -49,6 +49,37 @@ echo "workspace A : $WS_A"
 echo "workspace B : ${WS_B:-<none — tests 5-6 will skip>}"
 echo "vpn         : $VPN_CONTAINER"
 
+# A workspace still on the old shared-netns template sits outside $SUBNET. Tests 5
+# and 6 would then pass for the wrong reason -- separate namespaces, but not the
+# configuration under test -- so say so loudly rather than bank a false green.
+PREFIX="${SUBNET%.*/*}."
+ws_addr() { wex "$1" "ip -4 -o addr show scope global 2>/dev/null | awk '{print \$4}' | cut -d/ -f1 | head -1"; }
+for w in "$WS_A" "$WS_B"; do
+  [ -n "$w" ] || continue
+  running=$(docker inspect -f '{{.State.Running}}' "$w" 2>/dev/null || echo false)
+  a=$(ws_addr "$w")
+  if [ "$running" != "true" ] || [ -z "$a" ]; then
+    # Running the suite against an unreachable workspace produces a page of
+    # failures that all trace back to this one fact. Stop instead.
+    printf '\n\033[31mABORT\033[0m  %s is not usable (running=%s, address=%s).\n' \
+      "$w" "$running" "${a:-<none>}"
+    echo "        Every test below would fail for this one reason, so the suite stops here."
+    echo "        Start or rebuild the workspace in Coder, confirm it is healthy, then:"
+    echo "          docker exec $w ip route     # expect: default via ${PREFIX}2"
+    echo "        and re-run this script."
+    exit 2
+  fi
+  case "$a" in
+    "$PREFIX"*) : ;;
+    *) printf '\033[33mWARNING\033[0m %s is at %s, not on %s (%s*).\n' \
+         "$w" "$a" "$SUBNET" "$PREFIX"
+       echo "        It is not using the routed per-workspace network -- most likely"
+       echo "        an old workspace from the pre-netns template. Rebuild it before"
+       echo "        trusting tests 5 and 6."
+       ;;
+  esac
+done
+
 # --- reference IPs ------------------------------------------------------------
 hdr "0. Reference egress IPs"
 HOST_IP=$(timeout 20 curl -s https://api.ipify.org || echo "")
@@ -109,17 +140,84 @@ hdr "4. Killswitch: egress dies with the tunnel (does not fall back to LAN)"
 if [ "$DO_KILLSWITCH" -ne 1 ]; then
   sk "not run (pass --killswitch to enable; briefly interrupts VPN traffic)"
 else
+  # Downing the tunnel removes the routes that hang off it, and bringing the link
+  # back up does NOT restore them -- which previously left the gateway (and every
+  # workspace behind it) with no egress after each run. Save state, then restore
+  # it, escalating to a container restart if openvpn does not recover on its own.
+  SAVED_DEF=$(docker exec "$VPN_CONTAINER" ip route show default 2>/dev/null | head -1)
+
   docker exec "$VPN_CONTAINER" ip link set "$TUN_IF" down 2>/dev/null
   sleep 3
   DOWN_EGRESS=$(wex "$WS_A" 'curl -s --max-time 10 https://api.ipify.org' || echo "")
-  docker exec "$VPN_CONTAINER" ip link set "$TUN_IF" up 2>/dev/null
   if [ -z "$DOWN_EGRESS" ]; then
     ok "egress blocked while tunnel down"
   else
     no "LEAK: workspace still reached the internet as $DOWN_EGRESS with $TUN_IF down"
   fi
-  echo "  NOTE: bringing $TUN_IF back up may need an OpenVPN reconnect — check the"
-  echo "        container log and restart $VPN_CONTAINER if egress does not return."
+
+  printf '  restoring tunnel'
+  docker exec "$VPN_CONTAINER" ip link set "$TUN_IF" up 2>/dev/null
+  sleep 2
+  if [ -n "$SAVED_DEF" ] && ! docker exec "$VPN_CONTAINER" ip route show default 2>/dev/null | grep -q .; then
+    # shellcheck disable=SC2086
+    docker exec "$VPN_CONTAINER" ip route add $SAVED_DEF 2>/dev/null && printf ' (default route restored)'
+  fi
+
+  # "Some egress" is NOT recovery: a gateway whose tunnel is still down answers
+  # from the host's ISP address. Require an address that is non-empty AND not the
+  # host's, or this reports success while every workspace is leaking.
+  tunnel_up() {
+    ip=$(docker exec "$VPN_CONTAINER" sh -c 'curl -s --max-time 5 https://api.ipify.org' 2>/dev/null || echo "")
+    [ -n "$ip" ] && [ "$ip" != "$HOST_IP" ] && echo "$ip"
+  }
+
+  restored=""
+  for _ in 1 2 3 4 5 6; do
+    printf '.'
+    restored=$(tunnel_up)
+    [ -n "$restored" ] && break
+    sleep 5
+  done
+
+  if [ -z "$restored" ]; then
+    printf ' openvpn did not recover — restarting %s\n' "$VPN_CONTAINER"
+    docker restart "$VPN_CONTAINER" >/dev/null 2>&1
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      printf '.'
+      restored=$(tunnel_up)
+      [ -n "$restored" ] && break
+      sleep 5
+    done
+    echo ""
+    # A restart drops the network attachment and every in-container rule. Without
+    # reapplying them the gateway is unprotected, and any later test -- 6b above
+    # all -- measures a half-configured system and reports a meaningless result.
+    ENSURE="$(dirname "$0")/vpn-gateway-ensure.sh"
+    if [ -f "$ENSURE" ]; then
+      echo "  reapplying gateway rules after restart ($ENSURE)"
+      if bash "$ENSURE" >/dev/null 2>&1; then
+        echo "  gateway rules reapplied"
+      else
+        no "could not reapply gateway rules; run '$ENSURE' by hand. Results below are unreliable."
+      fi
+    else
+      no "vpn-gateway-ensure.sh not found next to this script; the gateway is
+        UNPROTECTED after the restart and every result below is unreliable.
+        Run it manually, then re-run this suite."
+    fi
+  fi
+
+  if [ -n "$restored" ]; then
+    echo ""
+    ok "tunnel restored (egress $restored) — workspaces should reconnect within ~30 s"
+  else
+    echo ""
+    no "TUNNEL DID NOT RECOVER (no egress, or egress still equals the host IP
+        $HOST_IP, meaning traffic is not going through the VPN). Workspaces have no
+        working egress until this is fixed:
+          docker restart $VPN_CONTAINER
+          bash $(dirname "$0")/vpn-gateway-ensure.sh"
+  fi
 fi
 
 # --- 5. NetworkTables: both workspaces can bind 5810 --------------------------
@@ -162,7 +260,7 @@ else
   # network_mode= containers can present an empty Networks map; ask the container
   # itself as the authoritative fallback.
   B_IP=$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$v.IPAddress}} {{end}}' "$WS_B" | awk '{print $1}')
-  [ -n "$B_IP" ] || B_IP=$(docker inspect -f '{{.NetworkSettings.IPAddress}}' "$WS_B")
+  [ -n "$B_IP" ] || B_IP=$(docker inspect -f '{{.NetworkSettings.IPAddress}}' "$WS_B" 2>/dev/null)
   [ -n "$B_IP" ] || B_IP=$(wex "$WS_B" "ip -4 -o addr show scope global | awk '{print \$4}' | cut -d/ -f1 | head -1")
   echo "  workspace B address: ${B_IP:-<none>}"
   if [ -z "$B_IP" ]; then
@@ -182,13 +280,30 @@ ORIG_GW=$(wex "$WS_A" "ip route | awk '/^default/{print \$3; exit}'")
 if [ -z "$ORIG_GW" ]; then
   sk "could not read workspace default route"
 else
-  wex "$WS_A" "ip route replace default via $BRIDGE_GW" >/dev/null
-  ESCAPED=$(wex "$WS_A" 'curl -s --max-time 10 https://api.ipify.org' || echo "")
-  wex "$WS_A" "ip route replace default via $ORIG_GW" >/dev/null   # always restore
-  if [ -n "$ESCAPED" ]; then
-    no "BYPASS: workspace reached the internet as $ESCAPED via $BRIDGE_GW, off-tunnel. DOCKER-USER/WPILIB-HOST rules missing or out of order."
+  # sudo is required: the workspace runs as non-root `coder`, and CAP_NET_ADMIN
+  # from --cap-add lands in root's bounding set only. Without it the route never
+  # changes, the follow-up request goes out the tunnel as normal, and this test
+  # reports a "bypass" that never happened.
+  wex "$WS_A" "sudo ip route replace default via $BRIDGE_GW" >/dev/null 2>&1
+  NEW_GW=$(wex "$WS_A" "ip route | awk '/^default/{print \$3; exit}'")
+  if [ "$NEW_GW" != "$BRIDGE_GW" ]; then
+    wex "$WS_A" "sudo ip route replace default via $ORIG_GW" >/dev/null 2>&1
+    sk "could not re-point the default route (still $NEW_GW) — no passwordless sudo?"
+    echo "        Bypass prevention is therefore untested, not proven working."
   else
-    ok "re-routing to $BRIDGE_GW does not escape the tunnel"
+    ESCAPED=$(wex "$WS_A" 'curl -s --max-time 10 https://api.ipify.org' || echo "")
+    wex "$WS_A" "sudo ip route replace default via $ORIG_GW" >/dev/null 2>&1  # always restore
+    # Escaping means reaching the internet as the HOST. Coming out as the VPN
+    # address means the packets still went through the tunnel -- not a bypass.
+    if [ -z "$ESCAPED" ]; then
+      ok "re-routing to $BRIDGE_GW does not escape the tunnel (no egress)"
+    elif [ "$ESCAPED" = "$HOST_IP" ]; then
+      no "BYPASS: workspace reached the internet as the host address $ESCAPED via $BRIDGE_GW, off-tunnel. WPILIB-HOST rules missing or out of order."
+    elif [ "$ESCAPED" = "$VPN_EGRESS" ]; then
+      ok "re-routed traffic still egressed via the VPN ($ESCAPED) — not a bypass"
+    else
+      no "BYPASS: unexpected egress $ESCAPED via $BRIDGE_GW (neither host nor VPN address) — investigate."
+    fi
   fi
 fi
 

@@ -125,3 +125,36 @@ run "rejects_short_password" {
     var.vnc_password,
   ]
 }
+
+# Auth off must reach the script (so -DisableBasicAuth is applied) and must strip
+# the credentials from the healthcheck URL, or the probe would send basic-auth
+# headers to an endpoint that no longer expects them.
+run "auth_can_be_disabled" {
+  variables {
+    agent_id = "test"
+    port     = 12345
+    vnc_auth = false
+  }
+
+  assert {
+    condition     = strcontains(coder_script.wpilib_sim.script, "VNC_AUTH=\"false\"")
+    error_message = "VNC_AUTH=false must be templated into run.sh"
+  }
+
+  assert {
+    condition     = one([for h in coder_app.wpilib_sim.healthcheck : h.url]) == "http://localhost:12345/app"
+    error_message = "healthcheck must drop embedded credentials when auth is disabled"
+  }
+}
+
+run "auth_on_by_default" {
+  variables {
+    agent_id = "test"
+    port     = 12345
+  }
+
+  assert {
+    condition     = strcontains(coder_script.wpilib_sim.script, "VNC_AUTH=\"true\"")
+    error_message = "auth must default to on"
+  }
+}

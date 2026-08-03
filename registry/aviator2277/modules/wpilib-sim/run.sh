@@ -18,6 +18,7 @@ JPEG_MAX="${JPEG_MAX}"
 ENABLE_CLIPBOARD="${ENABLE_CLIPBOARD}"
 KASM_VERSION="${KASM_VERSION}"
 VNC_USER="${VNC_USER}"
+VNC_AUTH="${VNC_AUTH}"
 SUBDOMAIN="${SUBDOMAIN}"
 
 PLACEHOLDER=/opt/wpilib-sim/placeholder.png
@@ -152,13 +153,34 @@ fi
 kasmvncserver -kill ":$${DISPLAY_NUMBER}" > /dev/null 2>&1 || true
 
 VNC_LOG="$HOME/.vnc/wpilib-sim-start.log"
-if ! kasmvncserver ":$${DISPLAY_NUMBER}" -select-de manual \
+# -DisableBasicAuth drops the HTTP basic-auth prompt on the web UI (verified:
+# /app returns 200 unauthenticated with it, 401 without). The API endpoints stay
+# authenticated regardless. The password file is still written either way --
+# kasmvncserver refuses to start without a write-permission user.
+#
+# Why turning it off is reasonable here: basic auth existed because a shared
+# network namespace made 127.0.0.1 reachable from sibling workspaces. With
+# per-workspace namespaces that is no longer true, and Coder still gates the app
+# behind an authenticated session (share = "owner"). Basic auth then adds no
+# boundary, but does add a real failure mode: a mistyped password is cached by
+# the browser and returns 401 forever, with no way to re-enter it.
+AUTH_ARGS=""
+if [ "$VNC_AUTH" = "false" ]; then
+  AUTH_ARGS="-DisableBasicAuth"
+fi
+
+# shellcheck disable=SC2086
+if ! kasmvncserver ":$${DISPLAY_NUMBER}" -select-de manual $AUTH_ARGS \
   -xstartup "$HOME/.vnc/xstartup-wpilib" > "$VNC_LOG" 2>&1; then
   log "ERROR: kasmvncserver failed to start; log follows:"
   cat "$VNC_LOG"
   exit 1
 fi
-log "KasmVNC up: display :$${DISPLAY_NUMBER}, http://127.0.0.1:$${PORT} (basic auth: $${VNC_USER})"
+if [ "$VNC_AUTH" = "false" ]; then
+  log "KasmVNC up: display :$${DISPLAY_NUMBER}, http://127.0.0.1:$${PORT} (basic auth OFF; Coder session gates access)"
+else
+  log "KasmVNC up: display :$${DISPLAY_NUMBER}, http://127.0.0.1:$${PORT} (basic auth: $${VNC_USER})"
+fi
 
 # --- sim frame-rate preseed ---------------------------------------------------
 # GradleRIO sims persist GUI state to <project>/simgui-window.json and default
